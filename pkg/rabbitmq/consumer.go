@@ -283,26 +283,30 @@ func (a *Consumer) applyAction(msg *message.Message, action ErrorAction) {
 
 func (a *Consumer) captureSentry(err error, handler config.Handler, msg *message.Message, isPanic bool) {
 	sentry.WithScope(func(scope *sentry.Scope) {
-		scope.SetExtra("handler", getHandlerName(handler))
-		scope.SetExtra("panic", isPanic)
+		ctx := sentry.Context{
+			"handler": getHandlerName(handler),
+			"panic":   isPanic,
+		}
 
 		if msg != nil {
-			scope.SetExtra("message_uuid", msg.UUID)
+			ctx["message_uuid"] = msg.UUID
 
 			if a.sentryPayload != 0 && len(msg.Payload) > a.sentryPayload {
-				scope.SetExtra("payload", string(msg.Payload[:a.sentryPayload]))
-				scope.SetExtra("payload_truncated", true)
-				scope.SetExtra("payload_size", len(msg.Payload))
+				ctx["payload"] = string(msg.Payload[:a.sentryPayload])
+				ctx["payload_truncated"] = true
+				ctx["payload_size"] = len(msg.Payload)
 			} else {
-				scope.SetExtra("payload", string(msg.Payload))
-				scope.SetExtra("payload_truncated", false)
+				ctx["payload"] = string(msg.Payload)
+				ctx["payload_truncated"] = false
 			}
 
 			// метаданные иногда полезны, но могут быть большими — оставим как есть
 			if msg.Metadata != nil {
-				scope.SetExtra("metadata", msg.Metadata)
+				ctx["metadata"] = msg.Metadata
 			}
 		}
+
+		scope.SetContext("consumer", ctx)
 
 		sentry.CaptureException(err)
 	})
