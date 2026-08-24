@@ -3,10 +3,10 @@ module github.com/exgamer/gosdk-rabbit-core
 go 1.25.5
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.5.1
+	github.com/ThreeDotsLabs/watermill v1.5.2
 	github.com/ThreeDotsLabs/watermill-amqp/v2 v2.1.3
 	github.com/exgamer/gosdk-core v1.0.23
-	github.com/getsentry/sentry-go v0.43.0
+	github.com/getsentry/sentry-go v0.48.0
 	github.com/google/uuid v1.6.0
 )
 
@@ -29,6 +29,6 @@ require (
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
