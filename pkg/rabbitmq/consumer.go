@@ -14,8 +14,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/exgamer/gosdk-core/pkg/errorreporter"
 	"github.com/exgamer/gosdk-rabbit-core/pkg/config"
-	"github.com/getsentry/sentry-go"
 )
 
 // Consumer — helper для запуска нескольких подписчиков (handlers).
@@ -165,7 +165,7 @@ func (a *Consumer) Consume(ctx context.Context) error {
 			defer func() {
 				if r := recover(); r != nil {
 					err := fmt.Errorf("consumer goroutine panic: %v", r)
-					a.captureSentry(err, cc.Handler, nil, true)
+					a.captureSentry(ctx, err, cc.Handler, nil, true)
 					// если такая паника — останавливаем всех
 					select {
 					case errCh <- err:
@@ -182,7 +182,7 @@ func (a *Consumer) Consume(ctx context.Context) error {
 			msgChannel, err := cc.Consumer.Subscribe(ctx, "")
 			if err != nil {
 				wrapped := fmt.Errorf("failed to subscribe (handler=%s): %w", handlerName, err)
-				a.captureSentry(wrapped, cc.Handler, nil, false)
+				a.captureSentry(ctx, wrapped, cc.Handler, nil, false)
 
 				select {
 				case errCh <- wrapped:
@@ -250,7 +250,7 @@ func (a *Consumer) handleMessage(ctx context.Context, cc config.ConsumeConfig, m
 			err := fmt.Errorf("panic in handler=%s: %v", handlerName, r)
 			log.Printf("Panic: %v", err)
 
-			a.captureSentry(err, cc.Handler, msg, true)
+			a.captureSentry(ctx, err, cc.Handler, msg, true)
 			a.applyAction(msg, a.onPanic)
 		}
 	}()
@@ -261,7 +261,7 @@ func (a *Consumer) handleMessage(ctx context.Context, cc config.ConsumeConfig, m
 
 	if err != nil {
 		log.Printf("Error handling message handler=%s elapsed=%s err=%v", handlerName, elapsed, err)
-		a.captureSentry(err, cc.Handler, msg, false)
+		a.captureSentry(ctx, err, cc.Handler, msg, false)
 		a.applyAction(msg, a.onError)
 
 		return
@@ -281,34 +281,40 @@ func (a *Consumer) applyAction(msg *message.Message, action ErrorAction) {
 	}
 }
 
-func (a *Consumer) captureSentry(err error, handler config.Handler, msg *message.Message, isPanic bool) {
-	sentry.WithScope(func(scope *sentry.Scope) {
-		ctx := sentry.Context{
-			"handler": getHandlerName(handler),
-			"panic":   isPanic,
+// captureSentry отправляет ошибку в error-трекер через errorreporter.Capture.
+// Consumer ничего не знает про Sentry - реальную отправку делает адаптер,
+// зарегистрированный через errorreporter.SetReporter (см. gosdk-sentry-core).
+// Без него вызов безопасен и просто ничего не отправляет.
+func (a *Consumer) captureSentry(ctx context.Context, err error, handler config.Handler, msg *message.Message, isPanic bool) {
+	consumerCtx := map[string]any{
+		"handler": getHandlerName(handler),
+		"panic":   isPanic,
+	}
+
+	if msg != nil {
+		consumerCtx["message_uuid"] = msg.UUID
+
+		if a.sentryPayload != 0 && len(msg.Payload) > a.sentryPayload {
+			consumerCtx["payload"] = string(msg.Payload[:a.sentryPayload])
+			consumerCtx["payload_truncated"] = true
+			consumerCtx["payload_size"] = len(msg.Payload)
+		} else {
+			consumerCtx["payload"] = string(msg.Payload)
+			consumerCtx["payload_truncated"] = false
 		}
 
-		if msg != nil {
-			ctx["message_uuid"] = msg.UUID
-
-			if a.sentryPayload != 0 && len(msg.Payload) > a.sentryPayload {
-				ctx["payload"] = string(msg.Payload[:a.sentryPayload])
-				ctx["payload_truncated"] = true
-				ctx["payload_size"] = len(msg.Payload)
-			} else {
-				ctx["payload"] = string(msg.Payload)
-				ctx["payload_truncated"] = false
-			}
-
-			// метаданные иногда полезны, но могут быть большими — оставим как есть
-			if msg.Metadata != nil {
-				ctx["metadata"] = msg.Metadata
-			}
+		// метаданные иногда полезны, но могут быть большими — оставим как есть
+		if msg.Metadata != nil {
+			consumerCtx["metadata"] = msg.Metadata
 		}
+	}
 
-		scope.SetContext("consumer", ctx)
-
-		sentry.CaptureException(err)
+	// Level: error для всех случаев - как и раньше (в исходном коде
+	// scope.SetLevel не звался, sentry-go по умолчанию шлёт LevelError).
+	errorreporter.Capture(ctx, err, errorreporter.Options{
+		Level: errorreporter.LevelError,
+		Tags:  map[string]string{"component": "rabbit_consumer"},
+		Extra: map[string]any{"consumer": consumerCtx},
 	})
 }
 
