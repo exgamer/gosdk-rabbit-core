@@ -286,8 +286,10 @@ func (a *Consumer) applyAction(msg *message.Message, action ErrorAction) {
 // зарегистрированный через errorreporter.SetReporter (см. gosdk-sentry-core).
 // Без него вызов безопасен и просто ничего не отправляет.
 func (a *Consumer) captureSentry(ctx context.Context, err error, handler config.Handler, msg *message.Message, isPanic bool) {
+	handlerName := getHandlerName(handler)
+
 	consumerCtx := map[string]any{
-		"handler": getHandlerName(handler),
+		"handler": handlerName,
 		"panic":   isPanic,
 	}
 
@@ -313,7 +315,12 @@ func (a *Consumer) captureSentry(ctx context.Context, err error, handler config.
 	// scope.SetLevel не звался, sentry-go по умолчанию шлёт LevelError).
 	errorreporter.Capture(ctx, err, errorreporter.Options{
 		Level: errorreporter.LevelError,
-		Tags:  map[string]string{"component": "rabbit_consumer"},
+		// handler тегом (не только в Extra) - чтобы фильтровать/группировать
+		// issues в Sentry по конкретному консьюмеру, как endpoint для HTTP.
+		Tags: map[string]string{
+			"component": "rabbit_consumer",
+			"handler":   handlerName,
+		},
 		Extra: map[string]any{"consumer": consumerCtx},
 	})
 }
