@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
 	"github.com/exgamer/gosdk-core/pkg/app"
 	"github.com/exgamer/gosdk-core/pkg/di"
@@ -58,14 +57,7 @@ func (k *RabbitKernel) Init(a *app.App) error {
 	k.config = rabbitConfig
 
 	connection, err := rabbitmq.NewAmqpConnection(amqp.ConnectionConfig{
-		AmqpURI: fmt.Sprintf(
-			"amqp://%s:%s@%s:%s%s",
-			k.config.User,
-			k.config.Pass,
-			k.config.Host,
-			k.config.Port,
-			k.config.VHost,
-		),
+		AmqpURI: k.config.AmqpURI(),
 	})
 
 	if err != nil {
@@ -73,6 +65,10 @@ func (k *RabbitKernel) Init(a *app.App) error {
 	}
 
 	k.connection = connection
+
+	// Соединение в DI (чтобы модули могли декларировать топологию — exchange/queue/bind —
+	// без необходимости поднимать consumer или publisher, см. rabbitmq.DeclareTopology)
+	di.Register(a.Container, k.connection)
 
 	// Реестр в DI (чтобы модули могли добавлять publishers)
 	pubReg := NewPublisherRegistry(k.connection)

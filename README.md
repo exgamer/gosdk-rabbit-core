@@ -74,6 +74,34 @@ RABBITMQ_PASSWORD=rabbitmq
 
 ---
 
+## 🗺️ Декларация топологии без consumer-а
+
+Для очередей, у которых намеренно нет читателя в этом сервисе (TTL/DLX retry-очередь и т.п.), не нужно поднимать отдельное `amqp.Dial`-соединение в обход SDK:
+
+```go
+conn, err := rabbitDi.GetRabbitConnection(a.Container)
+if err != nil {
+    return err
+}
+
+err = rabbitmq.DeclareTopology(conn, func(ch *amqp091.Channel) error {
+    if err := ch.ExchangeDeclare("outbox-retry", "direct", true, false, false, false, nil); err != nil {
+        return err
+    }
+
+    _, err := ch.QueueDeclare("outbox-retry-tier-1", true, false, false, false, amqp091.Table{
+        "x-message-ttl":          10_000,
+        "x-dead-letter-exchange": "events",
+    })
+
+    return err
+})
+```
+
+`rabbitDi.GetRabbitConnection` отдаёт то же самое переиспользуемое соединение kernel-а (с реконнектом), что используется под consumer/publisher — отдельно поднимать и закрывать своё соединение больше не нужно.
+
+---
+
 ## 🧩 Работа с консьюмером
 
 [Работа с консьюмером](/pkg/rabbitmq/CONSUMERREADME.md)
