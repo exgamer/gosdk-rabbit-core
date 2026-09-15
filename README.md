@@ -66,6 +66,14 @@ RABBITMQ_PASSWORD=rabbitmq
 
 ---
 
+## 🔧 Кастомный Marshaler и Connection
+
+- `config.WithCustomMarshaler(m amqp.Marshaler)` — свой `Marshaler` (в отличие от `WithMarshaller`, принимающего только конкретный `amqp.DefaultMarshaler`).
+- `config.WithConnectionConfig(cc amqp.ConnectionConfig)` — полная замена `ConnectionConfig` (TLS, raw `amqp091-go` конфиг, реконнект).
+- `marshaler.DeathTolerantMarshaler` (`pkg/marshaler`) — обёртка над `DefaultMarshaler`, не падает на нестроковых заголовках (например `x-death` от Dead Letter Exchange). Использовать через `config.WithCustomMarshaler(marshaler.DeathTolerantMarshaler{})` в любом consumer-е с retry-топологией через DLX.
+
+---
+
 ## 🧩 Работа с консьюмером
 
 [Работа с консьюмером](/pkg/rabbitmq/CONSUMERREADME.md)

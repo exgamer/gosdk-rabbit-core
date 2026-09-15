@@ -13,8 +13,23 @@ func WithAmqpURI(uri string) Config {
 	}
 }
 
+// WithConnectionConfig - полная замена ConnectionConfig (TLS, raw amqp091-go Config, Reconnect)
+func WithConnectionConfig(cc amqp.ConnectionConfig) Config {
+	return func(config *amqp.Config) {
+		config.Connection = cc
+	}
+}
+
 // WithMarshaller - конфиг для маршалинга сообщений
 func WithMarshaller(m amqp.DefaultMarshaler) Config {
+	return func(config *amqp.Config) {
+		config.Marshaler = m
+	}
+}
+
+// WithCustomMarshaler - конфиг для маршалинга сообщений через произвольную реализацию amqp.Marshaler
+// (в отличие от WithMarshaller, принимающего только конкретный тип amqp.DefaultMarshaler)
+func WithCustomMarshaler(m amqp.Marshaler) Config {
 	return func(config *amqp.Config) {
 		config.Marshaler = m
 	}
