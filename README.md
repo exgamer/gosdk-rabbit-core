@@ -64,6 +64,9 @@ RABBITMQ_USER=rabbitmq
 RABBITMQ_PASSWORD=rabbitmq
 ```
 
+Переменные `RABBITMQ_*` (`config.RabbitConfig`) читаются из окружения процесса и из `.env`;
+окружение главнее `.env`, пустая переменная в окружении перекрывает значение из `.env`.
+
 ---
 
 ## 🔧 Кастомный Marshaler и Connection
