@@ -3,12 +3,17 @@ package config
 import (
 	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
 	"github.com/exgamer/gosdk-rabbit-core/pkg/enums"
+	"github.com/exgamer/gosdk-rabbit-core/pkg/marshaler"
 )
 
-// NewConsumerByConfigs - возвращает новый конфиг
+// NewConsumerByConfigs - возвращает новый конфиг.
+// Marshaler - marshaler.DeathTolerantMarshaler: сообщения, вернувшиеся через DLX (с заголовком
+// x-death, в том числе повторы SDK), разбираются, а не уходят в бесконечный Nack.
 func NewConsumerByConfigs(bind amqp.QueueBindConfig, consumer amqp.ConsumeConfig, exchange amqp.ExchangeConfig, queue amqp.QueueConfig) []Config {
 	return []Config{
-		WithMarshaller(amqp.DefaultMarshaler{NotPersistentDeliveryMode: true}),
+		WithCustomMarshaler(marshaler.DeathTolerantMarshaler{
+			DefaultMarshaler: amqp.DefaultMarshaler{NotPersistentDeliveryMode: true},
+		}),
 		WithRoutingKeyBinding(bind),
 		WithConsumerConfig(consumer),
 		WithExchangeConfig(exchange),

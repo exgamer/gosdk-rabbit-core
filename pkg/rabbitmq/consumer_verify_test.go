@@ -62,7 +62,7 @@ func TestHandleMessage_ErrorPath_ReachesReporter(t *testing.T) {
 		},
 	}
 
-	c.handleMessage(context.Background(), cc, msg)
+	c.handleMessage(context.Background(), &consumerEntry{ConsumeConfig: cc}, msg)
 
 	select {
 	case <-msg.Nacked():
@@ -110,7 +110,7 @@ func TestHandleMessage_PanicPath_ReachesReporter(t *testing.T) {
 	}
 
 	// не должно паниковать наружу - defer/recover внутри handleMessage
-	c.handleMessage(context.Background(), cc, msg)
+	c.handleMessage(context.Background(), &consumerEntry{ConsumeConfig: cc}, msg)
 
 	select {
 	case <-msg.Nacked():
@@ -145,7 +145,7 @@ func TestHandleMessage_Success_DoesNotReachReporter(t *testing.T) {
 		},
 	}
 
-	c.handleMessage(context.Background(), cc, msg)
+	c.handleMessage(context.Background(), &consumerEntry{ConsumeConfig: cc}, msg)
 
 	select {
 	case <-msg.Acked():

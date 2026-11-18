@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+
 	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
 	"github.com/exgamer/gosdk-core/pkg/app"
 	"github.com/exgamer/gosdk-core/pkg/di"
@@ -27,7 +29,12 @@ type RabbitKernel struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	enableConsumer  bool
+	// consumeDone закрывается, когда Consume вернулся
+	consumeDone chan struct{}
+
+	enableConsumer bool
+	// enablePublisher - флаг публичного EnablePublisher; publisher-ы создаются реестром по запросу
+	// независимо от него, поле оставлено ради совместимости API.
 	enablePublisher bool
 }
 
@@ -105,20 +112,58 @@ func (k *RabbitKernel) Start(a *app.App) error {
 			return err
 		}
 
-		go func() {
-			if err := k.consumer.Consume(k.ctx); err != nil {
-				logger.Error(k.ctx, "rabbit consumer stopped: "+err.Error())
-				k.cancel()
-			}
-		}()
+		k.consumeDone = make(chan struct{})
+
+		go k.runConsumer(a)
 	}
 
 	return nil
 }
 
+// runConsumer Consume до остановки. Если Consume вернулся не из-за Stop / отмены ctx приложения
+// (ошибка подписки, закрытый канал сообщений) - приложение останавливается через App.Fail:
+// сервис без приёма сообщений не остаётся «живым».
+func (k *RabbitKernel) runConsumer(a *app.App) {
+	defer close(k.consumeDone)
+
+	err := k.consumer.Consume(k.ctx)
+	if k.ctx.Err() != nil {
+		if err != nil {
+			logger.Error(k.ctx, "rabbit consumer stopped: "+err.Error())
+		}
+
+		return
+	}
+
+	if err == nil {
+		err = errors.New("rabbit consumer stopped unexpectedly")
+	}
+
+	logger.Error(k.ctx, "rabbit consumer stopped: "+err.Error())
+	k.cancel()
+	a.Fail(err)
+}
+
+// Stop прекращает приём сообщений, ждёт текущие обработчики в пределах ctx, затем закрывает
+// подписчиков, publisher-ы и соединение.
 func (k *RabbitKernel) Stop(ctx context.Context) error {
 	if k.cancel != nil {
 		k.cancel()
+	}
+
+	var errs []error
+
+	if k.consumer != nil {
+		if err := k.consumer.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if k.consumeDone != nil {
+		select {
+		case <-k.consumeDone:
+		case <-ctx.Done():
+		}
 	}
 
 	if k.publishersRegistry != nil {
@@ -126,7 +171,7 @@ func (k *RabbitKernel) Stop(ctx context.Context) error {
 	}
 
 	if k.connection == nil {
-		return nil
+		return errors.Join(errs...)
 	}
 
 	done := make(chan error, 1)
@@ -134,8 +179,10 @@ func (k *RabbitKernel) Stop(ctx context.Context) error {
 
 	select {
 	case err := <-done:
-		return err
+		errs = append(errs, err)
 	case <-ctx.Done():
-		return ctx.Err()
+		errs = append(errs, ctx.Err())
 	}
+
+	return errors.Join(errs...)
 }
